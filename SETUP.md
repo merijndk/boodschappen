@@ -14,7 +14,9 @@ steps below to turn on the shared database + sync.
    Pick any name/password, choose the region closest to you, wait ~2 min.
 2. Left sidebar → **SQL Editor** → **New query**.
 3. Open [`supabase.sql`](supabase.sql) from this repo, copy all of it, paste, and
-   click **Run**. (Creates the `items` table, opens access, enables realtime.)
+   click **Run**. (Creates the `items` + `recipes` tables, opens access, enables
+   realtime.) The script is safe to re-run any time — if you set the database up
+   before the recipe book existed, just run it again to add the `recipes` table.
 4. Left sidebar → **Project Settings** (gear) → **API**. Copy two values:
    - **Project URL** — looks like `https://abcdxyz.supabase.co`
    - **anon public** key — a long `eyJ...` string
