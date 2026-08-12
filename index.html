@@ -396,6 +396,13 @@
     }
     .btn-cancel { background: #eceef1; color: var(--text); }
     .btn-save { background: var(--green); color: #fff; }
+    .btn-danger { background: var(--trash); color: #fff; }
+    .confirm-text {
+      margin: 4px 4px 18px;
+      font-size: 17px;
+      line-height: 1.4;
+      color: var(--text);
+    }
   </style>
 </head>
 <body>
@@ -473,6 +480,17 @@
       <div class="sheet-actions">
         <button class="btn-cancel" id="editCancel" type="button">Annuleer</button>
         <button class="btn-save" id="editSaveBtn" type="button">Bewaar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation popup -->
+  <div class="sheet" id="confirmSheet" aria-hidden="true">
+    <div class="sheet-panel" role="dialog" aria-modal="true">
+      <p class="confirm-text" id="confirmText"></p>
+      <div class="sheet-actions">
+        <button class="btn-cancel" id="confirmCancel" type="button">Annuleer</button>
+        <button class="btn-danger" id="confirmOk" type="button">Verwijder</button>
       </div>
     </div>
   </div>

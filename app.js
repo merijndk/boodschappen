@@ -37,6 +37,12 @@ const editPlus = document.getElementById('editPlus');
 const editCancel = document.getElementById('editCancel');
 const editSaveBtn = document.getElementById('editSaveBtn');
 
+// Confirm popup
+const confirmSheet = document.getElementById('confirmSheet');
+const confirmText = document.getElementById('confirmText');
+const confirmCancel = document.getElementById('confirmCancel');
+const confirmOk = document.getElementById('confirmOk');
+
 // --- Supabase setup (falls back to local-only if not configured) -----------
 const configured =
   typeof window.SUPABASE_URL === 'string' &&
@@ -215,6 +221,27 @@ editSaveBtn.addEventListener('click', commitEdit);
 editSheet.addEventListener('click', (e) => { if (e.target === editSheet) closeEdit(); });
 editName.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitEdit(); } });
 
+// --- Confirm popup ---------------------------------------------------------
+let confirmOnOk = null;
+function openConfirm(message, onOk) {
+  confirmText.textContent = message;
+  confirmOnOk = onOk;
+  confirmSheet.classList.add('open');
+  confirmSheet.setAttribute('aria-hidden', 'false');
+}
+function closeConfirm() {
+  confirmSheet.classList.remove('open');
+  confirmSheet.setAttribute('aria-hidden', 'true');
+  confirmOnOk = null;
+}
+confirmCancel.addEventListener('click', closeConfirm);
+confirmSheet.addEventListener('click', (e) => { if (e.target === confirmSheet) closeConfirm(); });
+confirmOk.addEventListener('click', () => {
+  const cb = confirmOnOk;
+  closeConfirm();
+  if (cb) cb();
+});
+
 // =========================================================================
 //  SHOPPING LIST
 // =========================================================================
@@ -312,7 +339,9 @@ function recipeRow(recipe) {
   del.className = 'recipe-del';
   del.setAttribute('aria-label', 'Verwijder recept');
   del.textContent = '🗑';
-  del.addEventListener('click', () => deleteRecipe(recipe.id, li));
+  del.addEventListener('click', () =>
+    openConfirm(`"${recipe.name}" verwijderen?`, () => deleteRecipe(recipe.id, li))
+  );
 
   li.appendChild(tap);
   li.appendChild(del);
