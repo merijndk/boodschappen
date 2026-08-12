@@ -7,8 +7,11 @@
 create table if not exists public.items (
   id         uuid primary key default gen_random_uuid(),
   text       text not null,
+  amount     integer not null default 1,
   created_at timestamptz not null default now()
 );
+-- add the amount column if the table already existed from an earlier version
+alter table public.items add column if not exists amount integer not null default 1;
 
 -- Saved recipes. Ingredients are stored as a JSON array of strings.
 create table if not exists public.recipes (
@@ -24,16 +27,20 @@ alter table public.recipes enable row level security;
 
 drop policy if exists "anon read items"   on public.items;
 drop policy if exists "anon insert items" on public.items;
+drop policy if exists "anon update items" on public.items;
 drop policy if exists "anon delete items" on public.items;
 create policy "anon read items"   on public.items   for select to anon using (true);
 create policy "anon insert items" on public.items   for insert to anon with check (true);
+create policy "anon update items" on public.items   for update to anon using (true) with check (true);
 create policy "anon delete items" on public.items   for delete to anon using (true);
 
 drop policy if exists "anon read recipes"   on public.recipes;
 drop policy if exists "anon insert recipes" on public.recipes;
+drop policy if exists "anon update recipes" on public.recipes;
 drop policy if exists "anon delete recipes" on public.recipes;
 create policy "anon read recipes"   on public.recipes for select to anon using (true);
 create policy "anon insert recipes" on public.recipes for insert to anon with check (true);
+create policy "anon update recipes" on public.recipes for update to anon using (true) with check (true);
 create policy "anon delete recipes" on public.recipes for delete to anon using (true);
 
 -- 3. Realtime (live sync across devices) -----------------------------------

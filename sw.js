@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE = 'boodschappen-v3';
+const CACHE = 'boodschappen-v4';
 const ASSETS = [
   '.',
   'index.html',

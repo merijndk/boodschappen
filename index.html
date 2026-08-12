@@ -141,16 +141,57 @@
 
     .item {
       position: relative;
+      display: flex;
+      align-items: stretch;
       background: var(--card);
-      padding: 16px 16px;
-      font-size: 17px;
       touch-action: pan-y;
       will-change: transform;
       box-shadow: 0 1px 2px rgba(0,0,0,0.06);
-      word-break: break-word;
     }
     .item.dragging { transition: none; }
     .item.settling { transition: transform 0.2s ease; }
+
+    .item-main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      text-align: left;
+      border: none;
+      background: transparent;
+      font: inherit;
+      font-size: 17px;
+      color: var(--text);
+      padding: 16px;
+      cursor: pointer;
+    }
+    .item-main:active { background: rgba(0,0,0,0.03); }
+    .item-name { flex: 1; min-width: 0; word-break: break-word; }
+    .item-qty {
+      flex: 0 0 auto;
+      min-width: 26px;
+      height: 26px;
+      padding: 0 8px;
+      border-radius: 13px;
+      background: var(--green);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .item-trash {
+      flex: 0 0 auto;
+      width: 52px;
+      border: none;
+      background: transparent;
+      color: var(--trash);
+      font-size: 18px;
+      cursor: pointer;
+    }
+    .item-trash:active { background: rgba(192,57,43,0.08); }
 
     .empty {
       text-align: center;
@@ -296,6 +337,65 @@
       cursor: pointer;
     }
     .recipe-del:active { background: rgba(192,57,43,0.08); }
+
+    /* ---- Edit popup (name + amount stepper) ---- */
+    .sheet {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(0,0,0,0.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .sheet.open { opacity: 1; pointer-events: auto; }
+    .sheet-panel {
+      background: var(--card);
+      border-radius: 16px;
+      width: min(92vw, 420px);
+      padding: 18px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+      transform: translateY(10px);
+      transition: transform 0.2s ease;
+    }
+    .sheet.open .sheet-panel { transform: none; }
+    .sheet .name-field { margin-bottom: 16px; }
+    .stepper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+      margin-bottom: 18px;
+    }
+    .step-btn {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      border: 2px solid var(--green);
+      background: #fff;
+      color: var(--green);
+      font-size: 28px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .step-btn:active { background: var(--green); color: #fff; }
+    .step-val { font-size: 28px; font-weight: 700; min-width: 44px; text-align: center; }
+    .sheet-actions { display: flex; gap: 10px; }
+    .sheet-actions button {
+      flex: 1;
+      padding: 14px;
+      border-radius: 12px;
+      border: none;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-cancel { background: #eceef1; color: var(--text); }
+    .btn-save { background: var(--green); color: #fff; }
   </style>
 </head>
 <body>
@@ -359,6 +459,22 @@
         <ul id="ingredientList" class="list"></ul>
       </div>
     </section>
+  </div>
+
+  <!-- Edit popup: change name + amount -->
+  <div class="sheet" id="editSheet" aria-hidden="true">
+    <div class="sheet-panel" role="dialog" aria-modal="true">
+      <input class="name-field" id="editName" type="text" autocapitalize="sentences" enterkeyhint="done" />
+      <div class="stepper">
+        <button class="step-btn" id="editMinus" type="button" aria-label="Minder">−</button>
+        <div class="step-val" id="editAmount">1</div>
+        <button class="step-btn" id="editPlus" type="button" aria-label="Meer">+</button>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn-cancel" id="editCancel" type="button">Annuleer</button>
+        <button class="btn-save" id="editSaveBtn" type="button">Bewaar</button>
+      </div>
+    </div>
   </div>
 
   <script src="config.js"></script>

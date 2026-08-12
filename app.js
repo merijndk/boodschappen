@@ -28,6 +28,15 @@ const ingredientForm = document.getElementById('ingredientForm');
 const ingredientInput = document.getElementById('ingredientInput');
 const ingredientListEl = document.getElementById('ingredientList');
 
+// Edit popup
+const editSheet = document.getElementById('editSheet');
+const editName = document.getElementById('editName');
+const editAmountEl = document.getElementById('editAmount');
+const editMinus = document.getElementById('editMinus');
+const editPlus = document.getElementById('editPlus');
+const editCancel = document.getElementById('editCancel');
+const editSaveBtn = document.getElementById('editSaveBtn');
+
 // --- Supabase setup (falls back to local-only if not configured) -----------
 const configured =
   typeof window.SUPABASE_URL === 'string' &&
@@ -39,11 +48,11 @@ const supabase = configured
   ? createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY)
   : null;
 
-/** @type {{id: string, text: string, created_at?: string}[]} */
+/** @type {{id: string, text: string, amount: number, created_at?: string}[]} */
 let items = loadLocal(ITEMS_KEY);
-/** @type {{id: string, name: string, ingredients: string[], created_at?: string}[]} */
-let recipes = loadLocal(RECIPES_KEY);
-/** ingredients being typed while creating a new recipe */
+/** @type {{id: string, name: string, ingredients: {text:string, amount:number}[], created_at?: string}[]} */
+let recipes = loadLocal(RECIPES_KEY).map(normRecipe);
+/** ingredients being typed while creating a new recipe: {text, amount}[] */
 let draft = [];
 
 // --- Helpers ---------------------------------------------------------------
@@ -54,16 +63,21 @@ function loadLocal(key) {
     return [];
   }
 }
-function saveItems() {
-  localStorage.setItem(ITEMS_KEY, JSON.stringify(items));
-}
-function saveRecipes() {
-  localStorage.setItem(RECIPES_KEY, JSON.stringify(recipes));
-}
+function saveItems() { localStorage.setItem(ITEMS_KEY, JSON.stringify(items)); }
+function saveRecipes() { localStorage.setItem(RECIPES_KEY, JSON.stringify(recipes)); }
 
 function uid() {
   if (crypto.randomUUID) return crypto.randomUUID();
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+// Normalize an ingredient that might be a plain string (older data) or {text, amount}
+function normIng(x) {
+  if (typeof x === 'string') return { text: x, amount: 1 };
+  return { text: String(x.text ?? ''), amount: Math.max(1, parseInt(x.amount, 10) || 1) };
+}
+function normRecipe(r) {
+  return { ...r, ingredients: (r.ingredients || []).map(normIng) };
 }
 
 let statusTimer = null;
@@ -75,73 +89,131 @@ function setStatus(text, autoClear) {
   if (text && autoClear) statusTimer = setTimeout(() => setStatus(''), 2200);
 }
 
-// --- Generic swipe-to-remove row (touch + mouse via pointer events) --------
-// Builds a <li.row><div.item> and calls onRemove(row) when flung right.
-function makeSwipeRow(text, id, onRemove) {
-  const row = document.createElement('li');
-  row.className = 'row';
-  row.dataset.id = id;
+// --- Generic editable + swipeable row --------------------------------------
+// Row shows [name (+qty badge if >1)] [🗑]. Tap name → onEdit(li). Trash or
+// swipe-right → onDelete(li). Returns the <li>.
+function makeRow(text, amount, { onEdit, onDelete }) {
+  const li = document.createElement('li');
+  li.className = 'row';
 
-  const el = document.createElement('div');
-  el.className = 'item';
-  el.textContent = text;
+  const item = document.createElement('div');
+  item.className = 'item';
 
-  let startX = 0, startY = 0, dx = 0, dragging = false, decided = false;
+  const main = document.createElement('button');
+  main.type = 'button';
+  main.className = 'item-main';
+  if (amount > 1) {
+    const qty = document.createElement('span');
+    qty.className = 'item-qty';
+    qty.textContent = amount;
+    main.appendChild(qty);
+  }
+  const name = document.createElement('span');
+  name.className = 'item-name';
+  name.textContent = text;
+  main.appendChild(name);
 
-  el.addEventListener('pointerdown', (e) => {
+  const trash = document.createElement('button');
+  trash.type = 'button';
+  trash.className = 'item-trash';
+  trash.setAttribute('aria-label', 'Verwijder');
+  trash.textContent = '🗑';
+
+  item.appendChild(main);
+  item.appendChild(trash);
+  li.appendChild(item);
+
+  // Swipe handling on the whole item surface
+  let startX = 0, startY = 0, dx = 0, dragging = false, decided = false, didSwipe = false;
+
+  item.addEventListener('pointerdown', (e) => {
+    if (e.target === trash) return; // let the trash button handle its own tap
     startX = e.clientX; startY = e.clientY; dx = 0;
-    dragging = true; decided = false;
-    el.classList.add('dragging');
+    dragging = true; decided = false; didSwipe = false;
+    item.classList.add('dragging');
   });
-
-  el.addEventListener('pointermove', (e) => {
+  item.addEventListener('pointermove', (e) => {
     if (!dragging) return;
-    const moveX = e.clientX - startX;
-    const moveY = e.clientY - startY;
+    const mX = e.clientX - startX, mY = e.clientY - startY;
     if (!decided) {
-      if (Math.abs(moveX) < 6 && Math.abs(moveY) < 6) return;
-      if (Math.abs(moveY) > Math.abs(moveX)) { // vertical scroll — bail
-        dragging = false; el.classList.remove('dragging'); return;
-      }
-      decided = true;
-      el.setPointerCapture(e.pointerId);
+      if (Math.abs(mX) < 6 && Math.abs(mY) < 6) return;
+      if (Math.abs(mY) > Math.abs(mX)) { dragging = false; item.classList.remove('dragging'); return; }
+      decided = true; didSwipe = true;
+      item.setPointerCapture(e.pointerId);
     }
-    dx = Math.max(0, moveX); // right only
-    el.style.transform = `translateX(${dx}px)`;
+    dx = Math.max(0, mX);
+    item.style.transform = `translateX(${dx}px)`;
   });
-
   function end() {
     if (!dragging) return;
     dragging = false;
-    el.classList.remove('dragging');
-    const threshold = el.offsetWidth * 0.4;
+    item.classList.remove('dragging');
+    const threshold = item.offsetWidth * 0.4;
     if (dx > threshold) {
-      el.classList.add('settling');
-      el.style.transform = `translateX(${el.offsetWidth + 40}px)`;
-      el.addEventListener('transitionend', () => onRemove(row), { once: true });
+      item.classList.add('settling');
+      item.style.transform = `translateX(${item.offsetWidth + 40}px)`;
+      item.addEventListener('transitionend', () => onDelete(li), { once: true });
     } else {
-      el.classList.add('settling');
-      el.style.transform = 'translateX(0)';
-      el.addEventListener('transitionend', () => el.classList.remove('settling'), { once: true });
+      item.classList.add('settling');
+      item.style.transform = 'translateX(0)';
+      item.addEventListener('transitionend', () => item.classList.remove('settling'), { once: true });
     }
   }
-  el.addEventListener('pointerup', end);
-  el.addEventListener('pointercancel', end);
+  item.addEventListener('pointerup', end);
+  item.addEventListener('pointercancel', end);
 
-  row.appendChild(el);
-  return row;
+  main.addEventListener('click', () => {
+    if (didSwipe) { didSwipe = false; return; } // ignore the click that ends a swipe
+    onEdit(li);
+  });
+  trash.addEventListener('click', (e) => { e.stopPropagation(); onDelete(li); });
+
+  return li;
 }
 
-function animateOut(row, onDone) {
-  if (!row || !row.isConnected) { if (onDone) onDone(); return; }
-  row.style.transition = 'height 0.2s ease, margin 0.2s ease, opacity 0.2s ease';
-  row.style.height = row.offsetHeight + 'px';
-  void row.offsetHeight;
-  row.style.height = '0';
-  row.style.marginBottom = '0';
-  row.style.opacity = '0';
-  row.addEventListener('transitionend', () => { row.remove(); if (onDone) onDone(); }, { once: true });
+function animateOut(li, onDone) {
+  if (!li || !li.isConnected) { if (onDone) onDone(); return; }
+  li.style.transition = 'height 0.2s ease, margin 0.2s ease, opacity 0.2s ease';
+  li.style.height = li.offsetHeight + 'px';
+  void li.offsetHeight;
+  li.style.height = '0';
+  li.style.marginBottom = '0';
+  li.style.opacity = '0';
+  li.addEventListener('transitionend', () => { li.remove(); if (onDone) onDone(); }, { once: true });
 }
+
+// --- Edit popup ------------------------------------------------------------
+let editValue = 1;
+let editOnSave = null;
+
+function openEdit(text, amount, onSave) {
+  editValue = Math.max(1, amount || 1);
+  editOnSave = onSave;
+  editName.value = text;
+  editAmountEl.textContent = editValue;
+  editSheet.classList.add('open');
+  editSheet.setAttribute('aria-hidden', 'false');
+  setTimeout(() => { editName.focus(); }, 60);
+}
+function closeEdit() {
+  editSheet.classList.remove('open');
+  editSheet.setAttribute('aria-hidden', 'true');
+  editOnSave = null;
+}
+function commitEdit() {
+  const t = editName.value.trim();
+  if (!t) { editName.focus(); return; }
+  const cb = editOnSave;
+  const amt = editValue;
+  closeEdit();
+  if (cb) cb({ text: t, amount: amt });
+}
+editMinus.addEventListener('click', () => { editValue = Math.max(1, editValue - 1); editAmountEl.textContent = editValue; });
+editPlus.addEventListener('click', () => { editValue += 1; editAmountEl.textContent = editValue; });
+editCancel.addEventListener('click', closeEdit);
+editSaveBtn.addEventListener('click', commitEdit);
+editSheet.addEventListener('click', (e) => { if (e.target === editSheet) closeEdit(); });
+editName.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitEdit(); } });
 
 // =========================================================================
 //  SHOPPING LIST
@@ -153,28 +225,42 @@ function renderList() {
 }
 
 function itemRow(item) {
-  return makeSwipeRow(item.text, item.id, (row) => removeItem(item.id, row));
+  const li = makeRow(item.text, item.amount, {
+    onEdit: (row) => openEdit(item.text, item.amount, ({ text, amount }) => updateItem(item, text, amount, row)),
+    onDelete: (row) => removeItem(item.id, row),
+  });
+  li.dataset.id = item.id;
+  return li;
 }
 
-async function addItem(text) {
+async function addItem(text, amount = 1) {
   const value = text.trim();
   if (!value) return;
-  const item = { id: uid(), text: value, created_at: new Date().toISOString() };
+  const item = { id: uid(), text: value, amount: Math.max(1, amount || 1), created_at: new Date().toISOString() };
   items.unshift(item);
   saveItems();
   listEl.prepend(itemRow(item));
   emptyEl.style.display = 'none';
 
   if (!supabase) return;
-  const { error } = await supabase.from('items').insert({ id: item.id, text: item.text });
+  const { error } = await supabase.from('items').insert({ id: item.id, text: item.text, amount: item.amount });
   if (error) setStatus('Offline — wordt lokaal bewaard', true);
 }
 
-async function removeItem(id, row) {
+async function updateItem(item, text, amount, li) {
+  item.text = text;
+  item.amount = amount;
+  saveItems();
+  li.replaceWith(itemRow(item));
+  if (!supabase) return;
+  const { error } = await supabase.from('items').update({ text, amount }).eq('id', item.id);
+  if (error) setStatus('Offline — wordt lokaal bewaard', true);
+}
+
+async function removeItem(id, li) {
   items = items.filter((i) => i.id !== id);
   saveItems();
-  animateOut(row, () => { if (!items.length) emptyEl.style.display = 'block'; });
-
+  animateOut(li, () => { if (!items.length) emptyEl.style.display = 'block'; });
   if (!supabase) return;
   const { error } = await supabase.from('items').delete().eq('id', id);
   if (error) setStatus('Offline — wordt lokaal bewaard', true);
@@ -185,10 +271,10 @@ async function syncItemsFromServer() {
   setStatus('Synchroniseren…');
   const { data, error } = await supabase
     .from('items')
-    .select('id, text, created_at')
+    .select('id, text, amount, created_at')
     .order('created_at', { ascending: false });
   if (error) { setStatus('Offline — lokale lijst', true); return; }
-  items = data;
+  items = data.map((d) => ({ ...d, amount: Math.max(1, d.amount || 1) }));
   saveItems();
   renderList();
   setStatus('');
@@ -197,6 +283,11 @@ async function syncItemsFromServer() {
 // =========================================================================
 //  RECIPES
 // =========================================================================
+function ingredientSummary(ings) {
+  if (!ings.length) return 'Geen ingrediënten';
+  return ings.map((i) => (i.amount > 1 ? `${i.amount}× ${i.text}` : i.text)).join(', ');
+}
+
 function renderRecipes() {
   recipeListEl.innerHTML = '';
   for (const r of recipes) recipeListEl.appendChild(recipeRow(r));
@@ -211,14 +302,9 @@ function recipeRow(recipe) {
   const tap = document.createElement('button');
   tap.type = 'button';
   tap.className = 'recipe-tap';
-  const count = recipe.ingredients.length;
-  tap.innerHTML =
-    `<span class="r-name"></span>` +
-    `<span class="r-sub"></span>`;
+  tap.innerHTML = `<span class="r-name"></span><span class="r-sub"></span>`;
   tap.querySelector('.r-name').textContent = recipe.name;
-  tap.querySelector('.r-sub').textContent =
-    count === 0 ? 'Geen ingrediënten' :
-    recipe.ingredients.join(', ');
+  tap.querySelector('.r-sub').textContent = ingredientSummary(recipe.ingredients);
   tap.addEventListener('click', () => addRecipeToList(recipe));
 
   const del = document.createElement('button');
@@ -234,7 +320,7 @@ function recipeRow(recipe) {
 }
 
 function addRecipeToList(recipe) {
-  for (const ing of recipe.ingredients) addItem(ing);
+  for (const ing of recipe.ingredients) addItem(ing.text, ing.amount);
   closeModal();
   setStatus(`Toegevoegd: ${recipe.name}`, true);
 }
@@ -258,10 +344,15 @@ async function deleteRecipe(id, li) {
 
 async function saveNewRecipe() {
   const name = recipeNameInput.value.trim();
-  if (!name) { recipeNameInput.focus(); setStatus(''); return; }
+  if (!name) { recipeNameInput.focus(); return; }
   if (!draft.length) { ingredientInput.focus(); return; }
 
-  const recipe = { id: uid(), name, ingredients: draft.slice(), created_at: new Date().toISOString() };
+  const recipe = {
+    id: uid(),
+    name,
+    ingredients: draft.map((d) => ({ text: d.text, amount: d.amount })),
+    created_at: new Date().toISOString(),
+  };
   recipes.unshift(recipe);
   saveRecipes();
   renderRecipes();
@@ -282,7 +373,7 @@ async function syncRecipesFromServer() {
     .select('id, name, ingredients, created_at')
     .order('created_at', { ascending: false });
   if (error) return;
-  recipes = data.map((r) => ({ ...r, ingredients: r.ingredients || [] }));
+  recipes = data.map(normRecipe);
   saveRecipes();
   renderRecipes();
 }
@@ -290,25 +381,29 @@ async function syncRecipesFromServer() {
 // --- Draft ingredient editing (same UX as the shopping list) ---------------
 function renderDraft() {
   ingredientListEl.innerHTML = '';
-  draft.forEach((text, i) => {
-    const idForRow = 'draft-' + i;
-    const row = makeSwipeRow(text, idForRow, (r) => {
-      const idx = draft.indexOf(text);
-      if (idx > -1) draft.splice(idx, 1);
-      saveDraftReindex();
-      animateOut(r);
-    });
-    ingredientListEl.appendChild(row);
+  for (const obj of draft) ingredientListEl.appendChild(draftRow(obj));
+}
+
+function draftRow(obj) {
+  return makeRow(obj.text, obj.amount, {
+    onEdit: (li) => openEdit(obj.text, obj.amount, ({ text, amount }) => {
+      obj.text = text; obj.amount = amount;
+      li.replaceWith(draftRow(obj));
+    }),
+    onDelete: (li) => {
+      const i = draft.indexOf(obj);
+      if (i > -1) draft.splice(i, 1);
+      animateOut(li);
+    },
   });
 }
-// draft rows are keyed by index; after a splice, simplest is a full re-render
-function saveDraftReindex() { /* no-op: draft is the source of truth */ }
 
 function addDraftIngredient(text) {
   const value = text.trim();
   if (!value) return;
-  draft.push(value);
-  renderDraft();
+  const obj = { text: value, amount: 1 };
+  draft.push(obj);
+  ingredientListEl.appendChild(draftRow(obj));
 }
 
 // =========================================================================
@@ -382,18 +477,29 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'items' }, (payload) => {
       const it = payload.new;
       if (items.some((i) => i.id === it.id)) return;
-      items.unshift({ id: it.id, text: it.text, created_at: it.created_at });
+      items.unshift({ id: it.id, text: it.text, amount: Math.max(1, it.amount || 1), created_at: it.created_at });
       saveItems();
-      listEl.prepend(itemRow(it));
+      listEl.prepend(itemRow(items[0]));
       emptyEl.style.display = 'none';
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'items' }, (payload) => {
+      const it = payload.new;
+      const idx = items.findIndex((i) => i.id === it.id);
+      if (idx === -1) return;
+      items[idx] = { ...items[idx], text: it.text, amount: Math.max(1, it.amount || 1) };
+      saveItems();
+      const li = listEl.querySelector(`.row[data-id="${it.id}"]`);
+      const fresh = itemRow(items[idx]);
+      fresh.dataset.id = it.id;
+      if (li) li.replaceWith(fresh);
     })
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'items' }, (payload) => {
       const id = payload.old.id;
       if (!items.some((i) => i.id === id)) return;
       items = items.filter((i) => i.id !== id);
       saveItems();
-      const row = listEl.querySelector(`.row[data-id="${id}"]`);
-      animateOut(row, () => { if (!items.length) emptyEl.style.display = 'block'; });
+      const li = listEl.querySelector(`.row[data-id="${id}"]`);
+      animateOut(li, () => { if (!items.length) emptyEl.style.display = 'block'; });
     })
     .subscribe();
 }
