@@ -557,9 +557,44 @@ function subscribeRealtime() {
     .subscribe();
 }
 
-// Register service worker for offline + installability
+// Register the service worker and keep the app on the latest version.
+// - App shell is served network-first (see sw.js), so a launch while online
+//   already loads the newest files.
+// - If a newer worker appears (e.g. resumed from the background after a
+//   deploy), we activate it and reload once so the running page updates too.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded) return; // guard against reload loops
+    reloaded = true;
+    window.location.reload();
+  });
+
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('sw.js');
+
+      // A new version was already waiting from a previous visit.
+      if (reg.waiting && navigator.serviceWorker.controller) {
+        reg.waiting.postMessage('SKIP_WAITING');
+      }
+
+      // A new version is downloaded while the app is open.
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+            nw.postMessage('SKIP_WAITING');
+          }
+        });
+      });
+
+      // Check for a new version on launch and whenever the app is refocused.
+      reg.update();
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update();
+      });
+    } catch {}
   });
 }
