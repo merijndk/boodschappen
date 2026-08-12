@@ -23,6 +23,7 @@ const recipeBack = document.getElementById('recipeBack');
 const recipeSave = document.getElementById('recipeSave');
 const recipeListEl = document.getElementById('recipeList');
 const recipeEmptyEl = document.getElementById('recipeEmpty');
+const recipeFormTitle = document.getElementById('recipeFormTitle');
 const recipeNameInput = document.getElementById('recipeName');
 const ingredientForm = document.getElementById('ingredientForm');
 const ingredientInput = document.getElementById('ingredientInput');
@@ -58,8 +59,10 @@ const supabase = configured
 let items = loadLocal(ITEMS_KEY);
 /** @type {{id: string, name: string, ingredients: {text:string, amount:number}[], created_at?: string}[]} */
 let recipes = loadLocal(RECIPES_KEY).map(normRecipe);
-/** ingredients being typed while creating a new recipe: {text, amount}[] */
+/** ingredients being typed while creating/editing a recipe: {text, amount}[] */
 let draft = [];
+/** id of the recipe currently being edited, or null when creating a new one */
+let editingId = null;
 
 // --- Helpers ---------------------------------------------------------------
 function loadLocal(key) {
@@ -334,6 +337,13 @@ function recipeRow(recipe) {
   tap.querySelector('.r-sub').textContent = ingredientSummary(recipe.ingredients);
   tap.addEventListener('click', () => addRecipeToList(recipe));
 
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'recipe-edit';
+  edit.setAttribute('aria-label', 'Bewerk recept');
+  edit.textContent = '✏️';
+  edit.addEventListener('click', () => openForm(recipe));
+
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'recipe-del';
@@ -344,6 +354,7 @@ function recipeRow(recipe) {
   );
 
   li.appendChild(tap);
+  li.appendChild(edit);
   li.appendChild(del);
   return li;
 }
@@ -371,27 +382,36 @@ async function deleteRecipe(id, li) {
   await supabase.from('recipes').delete().eq('id', id);
 }
 
-async function saveNewRecipe() {
+async function saveRecipeForm() {
   const name = recipeNameInput.value.trim();
   if (!name) { recipeNameInput.focus(); return; }
   if (!draft.length) { ingredientInput.focus(); return; }
 
-  const recipe = {
-    id: uid(),
-    name,
-    ingredients: draft.map((d) => ({ text: d.text, amount: d.amount })),
-    created_at: new Date().toISOString(),
-  };
-  recipes.unshift(recipe);
-  saveRecipes();
-  renderRecipes();
-  showListView();
+  const ingredients = draft.map((d) => ({ text: d.text, amount: d.amount }));
 
-  if (supabase) {
-    const { error } = await supabase
-      .from('recipes')
-      .insert({ id: recipe.id, name: recipe.name, ingredients: recipe.ingredients });
-    if (error) setStatus('Offline — recept lokaal bewaard', true);
+  if (editingId) {
+    // Update existing recipe in place (keeps its position + created_at)
+    const r = recipes.find((x) => x.id === editingId);
+    if (r) { r.name = name; r.ingredients = ingredients; }
+    saveRecipes();
+    renderRecipes();
+    showListView();
+    if (supabase) {
+      const { error } = await supabase.from('recipes').update({ name, ingredients }).eq('id', editingId);
+      if (error) setStatus('Offline — recept lokaal bewaard', true);
+    }
+  } else {
+    const recipe = { id: uid(), name, ingredients, created_at: new Date().toISOString() };
+    recipes.unshift(recipe);
+    saveRecipes();
+    renderRecipes();
+    showListView();
+    if (supabase) {
+      const { error } = await supabase
+        .from('recipes')
+        .insert({ id: recipe.id, name: recipe.name, ingredients: recipe.ingredients });
+      if (error) setStatus('Offline — recept lokaal bewaard', true);
+    }
   }
 }
 
@@ -453,9 +473,13 @@ function showListView() {
   listView.hidden = false;
   renderRecipes();
 }
-function showNewView() {
-  draft = [];
-  recipeNameInput.value = '';
+// Open the recipe form. Pass a recipe to edit it, or nothing to create a new one.
+function openForm(recipe) {
+  editingId = recipe ? recipe.id : null;
+  recipeFormTitle.textContent = recipe ? 'Recept bewerken' : 'Nieuw recept';
+  // deep copy so edits/cancel don't mutate the stored recipe until Save
+  draft = recipe ? recipe.ingredients.map((i) => ({ text: i.text, amount: i.amount })) : [];
+  recipeNameInput.value = recipe ? recipe.name : '';
   ingredientInput.value = '';
   renderDraft();
   listView.hidden = true;
@@ -475,9 +499,9 @@ form.addEventListener('submit', (e) => {
 
 bookBtn.addEventListener('click', openModal);
 recipeClose.addEventListener('click', closeModal);
-recipeNewBtn.addEventListener('click', showNewView);
+recipeNewBtn.addEventListener('click', () => openForm(null));
 recipeBack.addEventListener('click', showListView);
-recipeSave.addEventListener('click', saveNewRecipe);
+recipeSave.addEventListener('click', saveRecipeForm);
 
 ingredientForm.addEventListener('submit', (e) => {
   e.preventDefault();

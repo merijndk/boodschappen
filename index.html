@@ -337,6 +337,16 @@
       cursor: pointer;
     }
     .recipe-del:active { background: rgba(192,57,43,0.08); }
+    .recipe-edit {
+      border: none;
+      background: transparent;
+      color: var(--green);
+      font-size: 19px;
+      width: 50px;
+      flex: 0 0 auto;
+      cursor: pointer;
+    }
+    .recipe-edit:active { background: rgba(34,139,87,0.08); }
 
     /* ---- Edit popup (name + amount stepper) ---- */
     .sheet {
@@ -453,7 +463,7 @@
     <section class="modal-view" data-view="new" hidden>
       <div class="modal-bar">
         <button class="icon-btn" id="recipeBack" type="button" aria-label="Terug">‹</button>
-        <h2>Nieuw recept</h2>
+        <h2 id="recipeFormTitle">Nieuw recept</h2>
         <button class="text-btn" id="recipeSave" type="button">Bewaar</button>
       </div>
       <div class="modal-body">
